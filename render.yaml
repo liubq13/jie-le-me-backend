@@ -1,0 +1,13 @@
+﻿services:
+  - type: web
+    name: jie-le-me-api
+    env: node
+    region: singapore
+    plan: free
+    buildCommand: npm install && node src/seed.js
+    startCommand: node src/server.js
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production
