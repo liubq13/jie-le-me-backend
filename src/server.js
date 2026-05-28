@@ -1,11 +1,9 @@
 ﻿const express = require('express');
 const http = require('http');
-const { Server } = require('socket.io');
 const cors = require('cors');
 const path = require('path');
 
-const { initDb } = require('./database');
-const setupSocket = require('./socket');
+const { initDb, prepareGet, prepareAll } = require('./database');
 const authRoutes = require('./routes/auth');
 const regionRoutes = require('./routes/regions');
 const schoolRoutes = require('./routes/schools');
@@ -15,26 +13,15 @@ const dismissalRoutes = require('./routes/dismissal');
 const searchRoutes = require('./routes/search');
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: '*', methods: ['GET', 'POST'] }
-});
 
-// 初始化数据库后启动
 async function start() {
   await initDb();
-  console.log('数据库已初始化');
+  console.log('Database initialized');
 
-  // 初始化Socket
-  const socketManager = setupSocket(io);
-  app.set('socketManager', socketManager);
-
-  // 中间件
   app.use(cors());
   app.use(express.json());
   app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
-  // 路由
   app.use('/api/auth', authRoutes);
   app.use('/api/regions', regionRoutes);
   app.use('/api/schools', schoolRoutes);
@@ -43,47 +30,38 @@ async function start() {
   app.use('/api/dismissal', dismissalRoutes);
   app.use('/api/search', searchRoutes);
 
-  // 定时任务：放学10分钟后检查未接学生
-  setInterval(() => {
-    const { prepareGet, prepareAll } = require('./database');
-    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    const today = new Date().toISOString().slice(0, 10);
-    const records = prepareAll(
-      `SELECT dr.*, c.school_id
-       FROM dismissal_records dr
-       JOIN classes c ON dr.class_id = c.id
-       WHERE dr.status = 'dismissed'
-         AND dr.dismissed_at <= ?
-         AND date(dr.created_at) = ?`,
-      [tenMinutesAgo, today]
-    );
-
-    for (const record of records) {
-      const unpicked = prepareAll(
-        'SELECT DISTINCT pr.student_id FROM pickup_records pr WHERE pr.dismissal_record_id = ? AND pr.picked_up = 0',
-        [record.id]
-      );
-      for (const up of unpicked) {
-        const parents = prepareAll(
-          'SELECT parent_id FROM parent_students WHERE student_id = ?', [up.student_id]
-        );
-        for (const p of parents) {
-          socketManager.sendToUser(p.parent_id, 'pickup_reminder', {
-            student_id: up.student_id,
-            message: '您的孩子已放学超过10分钟，请确认是否已接到学生'
-          });
-        }
-      }
-    }
-  }, 30000);
+  // health check
+  app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
   const PORT = process.env.PORT || 3000;
+  const server = http.createServer(app);
   server.listen(PORT, '0.0.0.0', () => {
-    console.log('接了么后端服务已启动: http://localhost:' + PORT);
+    console.log('JieLeMe API running on port ' + PORT);
   });
+
+  // Check for overdue pickups every 30 seconds (log only, clients poll)
+  setInterval(() => {
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      const records = prepareAll(
+        "SELECT dr.*, c.school_id FROM dismissal_records dr JOIN classes c ON dr.class_id = c.id WHERE dr.status = 'dismissed' AND dr.dismissed_at <= ? AND date(dr.created_at) = ?",
+        [tenMinAgo, today]
+      );
+      for (const record of records) {
+        const unpicked = prepareAll(
+          'SELECT DISTINCT pr.student_id, pr.parent_id FROM pickup_records pr WHERE pr.dismissal_record_id = ? AND pr.picked_up = 0',
+          [record.id]
+        );
+        if (unpicked.length > 0) {
+          console.log('Overdue pickups for class ' + record.class_id + ': ' + unpicked.length + ' unpicked');
+        }
+      }
+    } catch(e) { /* ignore */ }
+  }, 30000);
 }
 
 start().catch(err => {
-  console.error('启动失败:', err);
+  console.error('Startup failed:', err);
   process.exit(1);
 });
