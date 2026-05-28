@@ -1,7 +1,7 @@
 {
   "name": "jie-le-me-backend",
   "version": "1.0.0",
-  "description": "鎺ヤ簡涔?- 鏀惧鎺ュ瀛愯鎺ョ郴缁熷悗绔?,
+  "description": "接了么 - 放学接孩子衔接系统后端",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -14,11 +14,7 @@
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
-    "socket.io": "^4.7.4",
     "sql.js": "^1.10.2",
     "uuid": "^9.0.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.3"
   }
 }
