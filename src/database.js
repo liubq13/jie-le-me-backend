@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const dbPath = path.join(__dirname, '..', 'data.db');
+const dbPath = process.env.VERCEL ? '/tmp/data.db' : path.join(__dirname, '..', 'data.db');
 
 let db = null;
 
@@ -227,4 +227,5 @@ function execSql(sql) {
 }
 
 module.exports = { initDb, getDb, saveDb, prepareRun, prepareGet, prepareAll, execSql };
+
 
